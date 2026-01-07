@@ -1,0 +1,16 @@
+[build]
+  # Commande de build pour votre projet Vite
+  command = "npm run build"
+  # Dossier de sortie généré par Vite
+  publish = "dist"
+
+[functions]
+  # Emplacement de votre dossier de fonctions backend
+  directory = "netlify/functions"
+
+[[redirects]]
+  # Important pour les applications React (Single Page Application)
+  # Redirige toutes les routes vers l'index.html
+  from = "/*"
+  to = "/index.html"
+  status = 200
