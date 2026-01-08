@@ -2,25 +2,26 @@ import { Handler } from '@netlify/functions';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const handler: Handler = async (event) => {
+  // Récupération sécurisée de la clé
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
   try {
     const { message, department, language } = JSON.parse(event.body || "{}");
 
-    // 1. Définir l'instruction système
+    // Votre instruction système pour le Coach
     const systemInstruction = `Tu es le Coach Good Pasta... (votre prompt ici)`;
 
-    // 2. INITIALISATION CORRECTE : On passe l'instruction ICI
+    // CONFIGURATION GEMINI 3.0
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
-      systemInstruction: systemInstruction, // Déplacé ici
+      model: "gemini-3.0-flash", // On passe officiellement à la version 3.0
+      systemInstruction: systemInstruction, // On garde l'instruction ici
     });
 
-    // 3. START CHAT : On garde uniquement les options de génération ici
     const chat = model.startChat({
       history: [],
       generationConfig: { 
-          temperature: 0.7 
+          temperature: 0.6, // On baisse légèrement pour plus de précision en 3.0
+          maxOutputTokens: 2000,
       }
     });
 
@@ -32,8 +33,11 @@ const handler: Handler = async (event) => {
       body: JSON.stringify({ text: response.text() }),
     };
   } catch (error) {
-    console.error(error);
-    return { statusCode: 500, body: JSON.stringify({ error: "Erreur serveur" }) };
+    console.error("Erreur Backend Gemini 3.0:", error);
+    return { 
+      statusCode: 500, 
+      body: JSON.stringify({ error: "Le moteur Gemini 3.0 a rencontré une erreur." }) 
+    };
   }
 };
 
