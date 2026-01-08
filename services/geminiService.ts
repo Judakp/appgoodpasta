@@ -1,39 +1,34 @@
-import { Message, Department } from '../types';
+import { Department } from "../types";
 
 export class GeminiService {
-  // On peut supprimer la variable 'model' ici car c'est la fonction Netlify qui décide
-  
-  async chat(message: string, history: Message[] = [], department?: Department, language: 'FR' | 'EN' = 'EN') {
+  async chat(message: string, history: any[] = [], department?: Department, language: 'FR' | 'EN' = 'EN') {
+    
+    const systemInstruction = `You are Coach Good Pasta... (votre prompt actuel)`;
+
     try {
-      // On envoie simplement les données nécessaires au backend
-      const response = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          message, 
-          department, 
-          language 
-        })
+      const response = await fetch("/.netlify/functions/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          history,
+          systemInstruction: systemInstruction + `\nContext: Department ${department || 'General'}. Language: ${language}`
+        }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Erreur serveur : ${response.status}`);
-      }
+      if (!response.ok) throw new Error("Erreur réseau");
 
       const data = await response.json();
-
-      // On vérifie que le texte existe avant d'appliquer le nettoyage (replace)
-      if (data && data.text) {
-        // Nettoyage des symboles interdits (**) et (#) comme demandé
+      
+      // Sécurité : on vérifie si data.text existe avant de faire le .replace()
+      if (data.text) {
         return data.text.replace(/\*\*|#/g, '');
       }
-
-      return language === 'FR' 
-        ? "Désolé, je n'ai pas pu obtenir de réponse du Coach." 
-        : "Sorry, I couldn't get a response from the Coach.";
-
+      
+      return language === 'FR' ? "Désolé, je n'ai pas pu générer de réponse." : "Sorry, I couldn't generate a response.";
+      
     } catch (error) {
-      console.error("Erreur de communication avec le backend :", error);
+      console.error("Erreur Coach:", error);
       throw error;
     }
   }

@@ -1,42 +1,45 @@
-import { Handler } from '@netlify/functions';
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { Handler } from "@netlify/functions";
 
 const handler: Handler = async (event) => {
-  // Récupération sécurisée de la clé
+  // On récupère la clé API depuis les variables d'environnement de Netlify
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+  
+  // Utilisation de l'ID exact vu sur votre capture d'écran
+  const model = genAI.getGenerativeModel({ 
+    model: "gemini-3-flash-preview" 
+  });
+
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, body: "Method Not Allowed" };
+  }
 
   try {
-    const { message, department, language } = JSON.parse(event.body || "{}");
+    const { message, history, systemInstruction } = JSON.parse(event.body || "{}");
 
-    // Votre instruction système pour le Coach
-    const systemInstruction = `Tu es le Coach Good Pasta... (votre prompt ici)`;
-
-    // CONFIGURATION GEMINI 3.0
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-3.0-flash", // On passe officiellement à la version 3.0
-      systemInstruction: systemInstruction, // On garde l'instruction ici
-    });
-
+    // Démarrage du chat avec l'instruction système
     const chat = model.startChat({
-      history: [],
-      generationConfig: { 
-          temperature: 0.6, // On baisse légèrement pour plus de précision en 3.0
-          maxOutputTokens: 2000,
+      history: history,
+      generationConfig: {
+        temperature: 0.7,
+        // Optionnel : vous pouvez ajouter "thinking_level" si disponible sur votre compte
       }
     });
 
-    const result = await chat.sendMessage(message);
+    // On inclut l'instruction système dans le premier message ou via le contexte
+    const fullMessage = `${systemInstruction}\n\nUser Message: ${message}`;
+    const result = await chat.sendMessage(fullMessage);
     const response = await result.response;
-
+    
     return {
       statusCode: 200,
       body: JSON.stringify({ text: response.text() }),
     };
-  } catch (error) {
-    console.error("Erreur Backend Gemini 3.0:", error);
-    return { 
-      statusCode: 500, 
-      body: JSON.stringify({ error: "Le moteur Gemini 3.0 a rencontré une erreur." }) 
+  } catch (error: any) {
+    console.error("Erreur Backend:", error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message }),
     };
   }
 };
