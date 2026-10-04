@@ -58,12 +58,23 @@ const App: React.FC = () => {
       const modelMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        content: response || (language === 'EN' ? "Error. Please try again." : "Erreur. Veuillez réessayer."),
+        content: response.text || (language === 'EN' ? "Error. Please try again." : "Erreur. Veuillez réessayer."),
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, modelMessage]);
     } catch (error) {
-      console.error(error);
+      console.error('Coach Good Pasta:', error);
+
+      const errorMessage = error instanceof Error
+        ? error.message
+        : (language === 'EN' ? 'An error occurred. Please try again.' : 'Une erreur est survenue. Veuillez réessayer.');
+
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        role: 'model',
+        content: errorMessage,
+        timestamp: new Date(),
+      }]);
     } finally {
       setIsLoading(false);
     }
