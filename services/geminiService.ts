@@ -12,10 +12,8 @@ export interface ChatResponse {
  *
  * Si aucune session n'existe, crée automatiquement un utilisateur anonyme.
  *
- * IMPORTANT :
- * On conserve ici les détails de l'erreur Supabase afin de pouvoir
- * identifier la véritable cause du problème (provider désactivé,
- * mauvaise clé, limite de requêtes, CAPTCHA, etc.).
+ * Les détails de l'erreur Supabase sont conservés afin de pouvoir
+ * identifier la véritable cause du problème.
  */
 const ensureAnonymousUser = async (): Promise<void> => {
   const {
@@ -106,208 +104,227 @@ const cleanText = (text: string): string => {
   return text
     // Blocs de code
     .replace(/```[\s\S]*?```/g, '')
+
     // Titres Markdown
     .replace(/^#{1,6}\s+/gm, '')
+
     // Gras / italique
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/__(.*?)__/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
     .replace(/_(.*?)_/g, '$1')
+
     // Liens Markdown [texte](url)
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+
     // Puces Markdown
     .replace(/^\s*[-*+]\s+/gm, '')
+
     // Lignes horizontales
     .replace(/^\s*([-*_]){3,}\s*$/gm, '')
+
     // Espaces excessifs
     .replace(/\n{3,}/g, '\n\n')
+
     .trim();
 };
 
 /**
- * Envoie un message à l'assistant IA.
+ * Service Gemini / Supabase.
  *
- * Le navigateur communique uniquement avec la Supabase Edge Function.
- * La clé Gemini n'est jamais exposée dans le frontend.
+ * IMPORTANT :
+ * L'objet est exporté sous le nom "geminiService" car App.tsx
+ * l'utilise avec :
+ *
+ * geminiService.chat(...)
  */
-export const chat = async (
-  message: string,
-  history: Message[],
-  language: string,
-  department?: Department
-): Promise<ChatResponse> => {
-  const cleanMessage = message.trim();
-
-  if (!cleanMessage) {
-    throw new Error(
-      'Le message ne peut pas être vide.'
-    );
-  }
-
+export const geminiService = {
   /**
-   * 1. Vérification / création de la session Supabase.
-   */
-  await ensureAnonymousUser();
-
-  /**
-   * 2. Récupération de la session actuelle.
+   * Envoie un message à l'assistant IA.
    *
-   * Cela permet de vérifier que le JWT est bien présent avant
-   * d'appeler la Edge Function.
-   */
-  const {
-    data: sessionData,
-    error: sessionError,
-  } = await supabase.auth.getSession();
-
-  if (sessionError) {
-    console.error(
-      'Erreur lors de la récupération de la session avant appel Edge Function:',
-      sessionError
-    );
-
-    throw new Error(
-      `Impossible de récupérer votre session Supabase : ${sessionError.message}`
-    );
-  }
-
-  if (!sessionData.session) {
-    console.error(
-      'Aucune session Supabase disponible avant l’appel à la Edge Function.'
-    );
-
-    throw new Error(
-      'Aucune session utilisateur Supabase disponible.'
-    );
-  }
-
-  console.log(
-    'Appel de la Edge Function "chat" avec la session utilisateur :',
-    sessionData.session.user.id
-  );
-
-  /**
-   * 3. Préparation de l'historique.
+   * Ordre des paramètres conservé exactement comme dans App.tsx :
    *
-   * On limite l'historique aux 10 derniers messages afin de
-   * réduire la taille de la requête envoyée à la Edge Function.
+   * chat(message, history, department, language)
    */
-  const cleanedHistory = history
-    .filter((item) => item.content?.trim())
-    .slice(-10)
-    .map((item) => ({
-      role: item.role,
-      content: item.content.trim(),
-    }));
+  async chat(
+    message: string,
+    history: Message[],
+    department?: Department,
+    language?: 'EN' | 'FR' | string | null
+  ): Promise<ChatResponse> {
+    const cleanMessage = message.trim();
 
-  /**
-   * 4. Appel de la Supabase Edge Function.
-   *
-   * La clé Gemini reste côté serveur.
-   */
-  const {
-    data,
-    error,
-  } = await supabase.functions.invoke('chat', {
-    body: {
-      message: cleanMessage,
-      history: cleanedHistory,
-      language,
-      department: department || 'General',
-    },
-  });
-
-  if (error) {
-    console.error(
-      'Supabase Edge Function error:',
-      {
-        message: error.message,
-        name: error.name,
-        context: (error as any).context,
-        status: (error as any).status,
-      }
-    );
-
-    /**
-     * Certaines erreurs de Functions contiennent une réponse HTTP
-     * dans "context". On essaie d'en extraire le corps pour obtenir
-     * le véritable message renvoyé par la Edge Function.
-     */
-    let detailedMessage = error.message;
-
-    try {
-      const context = (error as any).context;
-
-      if (context?.json) {
-        const contextData = await context.json();
-
-        if (contextData?.error) {
-          detailedMessage = contextData.error;
-        } else if (contextData?.message) {
-          detailedMessage = contextData.message;
-        }
-      }
-    } catch (parseError) {
-      console.warn(
-        'Impossible de lire le détail de la réponse de la Edge Function:',
-        parseError
+    if (!cleanMessage) {
+      throw new Error(
+        'Le message ne peut pas être vide.'
       );
     }
 
-    throw new Error(
-      `Erreur de l’assistant IA : ${detailedMessage}`
+    /**
+     * 1. Vérification / création de la session Supabase.
+     */
+    await ensureAnonymousUser();
+
+    /**
+     * 2. Récupération de la session actuelle.
+     *
+     * Cela permet de vérifier que le JWT est bien présent
+     * avant d'appeler la Edge Function.
+     */
+    const {
+      data: sessionData,
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      console.error(
+        'Erreur lors de la récupération de la session avant appel Edge Function:',
+        sessionError
+      );
+
+      throw new Error(
+        `Impossible de récupérer votre session Supabase : ${sessionError.message}`
+      );
+    }
+
+    if (!sessionData.session) {
+      console.error(
+        'Aucune session Supabase disponible avant l’appel à la Edge Function.'
+      );
+
+      throw new Error(
+        'Aucune session utilisateur Supabase disponible.'
+      );
+    }
+
+    console.log(
+      'Appel de la Edge Function "chat" avec la session utilisateur :',
+      sessionData.session.user.id
     );
-  }
 
-  /**
-   * 5. Vérification de la réponse.
-   */
-  if (!data) {
-    console.error(
-      'La Edge Function "chat" n’a retourné aucune donnée.'
-    );
+    /**
+     * 3. Préparation de l'historique.
+     *
+     * On limite l'historique aux 10 derniers messages.
+     */
+    const cleanedHistory = history
+      .filter((item) => item.content?.trim())
+      .slice(-10)
+      .map((item) => ({
+        role: item.role,
+        content: item.content.trim(),
+      }));
 
-    throw new Error(
-      'Le serveur IA n’a retourné aucune réponse.'
-    );
-  }
+    /**
+     * 4. Appel de la Supabase Edge Function.
+     *
+     * La clé Gemini reste côté serveur.
+     */
+    const {
+      data,
+      error,
+    } = await supabase.functions.invoke('chat', {
+      body: {
+        message: cleanMessage,
+        history: cleanedHistory,
+        language: language || 'FR',
+        department: department || 'General',
+      },
+    });
 
-  if (typeof data.text !== 'string') {
-    console.error(
-      'Réponse inattendue de la Edge Function:',
-      data
-    );
+    if (error) {
+      console.error(
+        'Supabase Edge Function error:',
+        {
+          message: error.message,
+          name: error.name,
+          context: (error as any).context,
+          status: (error as any).status,
+        }
+      );
 
-    throw new Error(
-      'La réponse du serveur IA est invalide.'
-    );
-  }
+      /**
+       * Certaines erreurs de Functions contiennent une réponse HTTP
+       * dans "context". On essaie d'en extraire le véritable message.
+       */
+      let detailedMessage = error.message;
 
-  /**
-   * 6. Nettoyage final du texte.
-   */
-  const cleanedText = cleanText(data.text);
+      try {
+        const context = (error as any).context;
 
-  if (!cleanedText) {
-    throw new Error(
-      'Le serveur IA a retourné une réponse vide.'
-    );
-  }
+        if (context?.json) {
+          const contextData = await context.json();
 
-  /**
-   * 7. Retour au composant React.
-   *
-   * remaining et limit viennent de la Edge Function.
-   */
-  return {
-    text: cleanedText,
-    remaining:
-      typeof data.remaining === 'number'
-        ? data.remaining
-        : 0,
-    limit:
-      typeof data.limit === 'number'
-        ? data.limit
-        : 10,
-  };
+          if (contextData?.error) {
+            detailedMessage = contextData.error;
+          } else if (contextData?.message) {
+            detailedMessage = contextData.message;
+          }
+        }
+      } catch (parseError) {
+        console.warn(
+          'Impossible de lire le détail de la réponse de la Edge Function:',
+          parseError
+        );
+      }
+
+      throw new Error(
+        `Erreur de l’assistant IA : ${detailedMessage}`
+      );
+    }
+
+    /**
+     * 5. Vérification de la réponse.
+     */
+    if (!data) {
+      console.error(
+        'La Edge Function "chat" n’a retourné aucune donnée.'
+      );
+
+      throw new Error(
+        'Le serveur IA n’a retourné aucune réponse.'
+      );
+    }
+
+    if (typeof data.text !== 'string') {
+      console.error(
+        'Réponse inattendue de la Edge Function:',
+        data
+      );
+
+      throw new Error(
+        'La réponse du serveur IA est invalide.'
+      );
+    }
+
+    /**
+     * 6. Nettoyage final du texte.
+     */
+    const cleanedText = cleanText(data.text);
+
+    if (!cleanedText) {
+      throw new Error(
+        'Le serveur IA a retourné une réponse vide.'
+      );
+    }
+
+    /**
+     * 7. Retour au composant React.
+     *
+     * remaining et limit viennent de la Edge Function.
+     */
+    return {
+      text: cleanedText,
+
+      remaining:
+        typeof data.remaining === 'number'
+          ? data.remaining
+          : 0,
+
+      limit:
+        typeof data.limit === 'number'
+          ? data.limit
+          : 10,
+    };
+  },
 };
